@@ -1,0 +1,1 @@
+Simple directory watcher for injecting the automated OracleBI "Daily Run Summary" report in to our News Release distribution queue.
