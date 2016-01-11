@@ -2,18 +2,17 @@ package gov.alaska.dfg.dcf.reportwatcher;
 
 import java.io.File;
 import java.io.IOException;
-import java.nio.file.Path;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import javafx.application.Application;
 import static javafx.application.Application.launch;
-import javafx.concurrent.Task;
 import javafx.event.ActionEvent;
 import javafx.event.EventHandler;
 import javafx.geometry.Insets;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
+import javafx.scene.control.TextArea;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.Pane;
 import javafx.scene.layout.VBox;
@@ -21,80 +20,41 @@ import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
 import javafx.stage.DirectoryChooser;
 import javafx.stage.Stage;
+import org.joda.time.DateTime;
 
 public class MainApp extends Application {
 
-    private static String activePath = "C:\\testPath";
-    private Task<Void> watcherTask;
-    private Thread watcherThread;
+    private static final String DEFAULT_PATH = "C:\\testPath";
+    private static final Watcher watcher = new Watcher(DEFAULT_PATH);
 
-    public void setupWatcher() throws IOException, InterruptedException {
-        final Path path = new File(activePath).toPath();
+    //Setup our buttons
+    final DirectoryChooser directoryChooser = new DirectoryChooser();
+    final Button changePathButton = new Button("Change Path");
+    final Button stopWatcherButton = new Button("Stop Watcher");
+    final Button startWatcherButton = new Button("Start Watcher");
 
-        //Setup our watcher task...
-        watcherTask = new Task<Void>() {
-            @Override
-            protected Void call() throws Exception {
-                Watcher.watchPath(path);
-                return null;
-            }
-        };
-        
-        //Setup our watcher thread...
-        watcherThread = new Thread(watcherTask);
-        watcherThread.setDaemon(true);
+    //Setup our labels (should probably be Text's...but whatever)
+    final Label pathLabel = new Label("Active Path: ");
+    final Label activePathLabel = new Label(watcher.getActivePath());
 
-    }
+    //Setup our TextArea for logging output.
+    final TextArea logTextArea = new TextArea();
 
-    public boolean startWatcher() throws IOException, InterruptedException {
-        boolean watcherStarted = false;
-        //Always stop the Watcher Thread before starting up a new one...
-        stopWatcher();
-        
-        //Setup our new Watcher Thread. 
-        setupWatcher();
+    public void updateLogger(String logEvent) {
+        String outputFormat = "%1$tF %1$tT | %2$s \n";
 
-        if (!watcherThread.isAlive()) {
-            watcherThread.start();
-            watcherStarted = true;
-        }
-
-        return watcherStarted;
-    }
-
-    public boolean stopWatcher() {
-        boolean watcherStopped = false;
-
-        if (watcherThread != null) {
-            if (watcherThread.isAlive()) {
-                watcherTask.cancel();
-                watcherThread.interrupt();
-                watcherTask = null;
-                watcherThread = null;
-                watcherStopped = true;
-            }
-        } else {
-            watcherStopped = true;
-        }
-
-        System.out.println("Watcher Stopped.");
-        return watcherStopped;
+        logTextArea.insertText(0, String.format(outputFormat,
+          new DateTime().toDate(), logEvent));
 
     }
 
     @Override
     public void start(final Stage stage) throws Exception {
 
-        //Setup our buttons
-        final DirectoryChooser directoryChooser = new DirectoryChooser();
-        final Button changePathButton = new Button("Change Path");
-        final Button stopWatcherButton = new Button("Stop Watcher");
-        final Button startWatcherButton = new Button("Start Watcher");
-
-        //Setup our labels (should probably be Text's...but whatever)
-        final Label pathLabel = new Label("Active Path: ");
+        //Do some UI component tweaking...
         pathLabel.setFont(Font.font("Verdana", FontWeight.BOLD, 12));
-        final Label activePathLabel = new Label(activePath);
+        logTextArea.setMaxWidth(400);
+        logTextArea.setEditable(false);
 
         //Give our buttons something to do...
         changePathButton.setOnAction(new EventHandler<ActionEvent>() {
@@ -102,8 +62,8 @@ public class MainApp extends Application {
             public void handle(ActionEvent event) {
                 File newPath = directoryChooser.showDialog(stage);
                 if (newPath.isDirectory()) {
-                    activePath = newPath.getPath();
-                    activePathLabel.setText(activePath);
+                    watcher.setActivePath(newPath.getPath());
+                    activePathLabel.setText(watcher.getActivePath());
                 }
             }
         });
@@ -112,7 +72,8 @@ public class MainApp extends Application {
             @Override
             public void handle(ActionEvent event) {
                 try {
-                    startWatcher();
+                    watcher.startWatcher();
+                    updateLogger("Starting Watcher");
                 } catch (IOException | InterruptedException ex) {
                     Logger.getLogger(MainApp.class.getName()).log(Level.SEVERE, null, ex);
                 }
@@ -122,36 +83,51 @@ public class MainApp extends Application {
         stopWatcherButton.setOnAction(new EventHandler<ActionEvent>() {
             @Override
             public void handle(ActionEvent event) {
-                stopWatcher();
+                updateLogger("Stopping Watcher");
+                watcher.stopWatcher();
             }
         });
 
-        //Setup a simple grid for our button to live in
-        final GridPane buttonPane = new GridPane();
-        GridPane.setConstraints(startWatcherButton, 0, 0);
-        GridPane.setConstraints(stopWatcherButton, 0, 1);
-        GridPane.setConstraints(changePathButton, 1, 0);
-        GridPane.setConstraints(pathLabel, 0, 2);
-        GridPane.setConstraints(activePathLabel, 1, 2);
-        buttonPane.setHgap(6);
-        buttonPane.setVgap(6);
+        //Setup a simple grid for our buttons, labels and text boxes to live in.
+        final GridPane containerPane = new GridPane();
+        //Grid Row 0
+        GridPane.setConstraints(pathLabel, 0, 0);
+        GridPane.setConstraints(activePathLabel, 1, 0);
+        
+        //Grid Row 1
+        GridPane.setConstraints(startWatcherButton, 0, 1);
+        GridPane.setConstraints(stopWatcherButton, 1, 1);
+        GridPane.setConstraints(changePathButton, 2, 1);
+        
+        //Grid Row 2
+        GridPane.setConstraints(logTextArea, 0, 2);
+        GridPane.setColumnSpan(logTextArea, 3);
+        
+        //Container Pane component tweaks...
+        containerPane.setHgap(6);
+        containerPane.setVgap(6);
 
         //Add the buttons to our container GridPane
-        buttonPane.getChildren().addAll(changePathButton, startWatcherButton, stopWatcherButton);
+        containerPane.getChildren().addAll(changePathButton, startWatcherButton, stopWatcherButton);
 
         //Add the labels to our container GridPane
-        buttonPane.getChildren().addAll(pathLabel, activePathLabel);
+        containerPane.getChildren().addAll(pathLabel, activePathLabel);
+
+        //Add the logging Text Area to our container GridPane
+        containerPane.getChildren().add(logTextArea);
 
         //Setup our root pane...
         final Pane rootGroup = new VBox(12);
-        rootGroup.getChildren().addAll(buttonPane);
+        rootGroup.getChildren().addAll(containerPane);
         rootGroup.setPadding(new Insets(12, 12, 12, 12));
 
         //Finally show all of our stuffs.
         stage.setTitle("DRS Report Watcher");
-        stage.setScene(new Scene(rootGroup, 320, 200));
+        stage.setScene(new Scene(rootGroup, 500, 200));
         stage.show();
 
+        //Just to let our user(s) know...
+        updateLogger("Ready");
     }
 
     /**

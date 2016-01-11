@@ -1,5 +1,6 @@
 package gov.alaska.dfg.dcf.reportwatcher;
 
+import java.io.File;
 import java.io.IOException;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
@@ -11,16 +12,83 @@ import java.nio.file.WatchEvent;
 import java.nio.file.WatchEvent.Kind;
 import java.nio.file.WatchKey;
 import java.nio.file.WatchService;
+import javafx.concurrent.Task;
 
 /**
  *
  * @author mhspellecacy
  */
 public class Watcher {
+    private String activePath = "C:\\testPath";
+    private Task<Void> watcherTask;
+    private Thread watcherThread;
+    
+    public Watcher(String path) {
+        this.activePath = path;
+    }
+    
+    public void setupWatcher() throws IOException, InterruptedException {
+        final Path path = new File(activePath).toPath();
+
+        //Setup our watcher task...
+        watcherTask = new Task<Void>() {
+            @Override
+            protected Void call() throws Exception {
+                watchPath(path);
+                return null;
+            }
+        };
+
+        //Setup our watcher thread...
+        watcherThread = new Thread(watcherTask);
+        watcherThread.setDaemon(true);
+
+    }
+
+    public boolean startWatcher() throws IOException, InterruptedException {
+        boolean watcherStarted = false;
+        //Always stop the Watcher Thread before starting up a new one...
+        stopWatcher();
+
+        //Setup our new Watcher Thread. 
+        setupWatcher();
+
+        if (!watcherThread.isAlive()) {
+            watcherThread.start();
+            watcherStarted = true;
+        }
+
+        return watcherStarted;
+    }
+
+    public boolean stopWatcher() {
+        boolean watcherStopped = false;
+
+        if (watcherThread != null) {
+            if (watcherThread.isAlive()) {
+                watcherTask.cancel();
+                watcherThread.interrupt();
+                watcherTask = null;
+                watcherThread = null;
+                watcherStopped = true;
+            }
+        } else {
+            watcherStopped = true;
+        }
+
+        System.out.println("Watcher Stopped.");
+        return watcherStopped;
+
+    }
+    
+    public boolean isRunning(){
+        return watcherTask.isRunning();
+    }
     
     //Liberally lifted from Oracle Docs and stackoverflow.
-    public static void watchPath(Path path) throws IOException, InterruptedException {
-        
+    @SuppressWarnings("unchecked")
+    public void watchPath(Path path) throws IOException, InterruptedException {
+
         //Check if the path is legit first...
         try {
             Boolean isFolder = (Boolean) Files.getAttribute(path, "basic:isDirectory", NOFOLLOW_LINKS);
@@ -49,7 +117,9 @@ public class Watcher {
 
                 //Dequeue events ...
                 Kind<?> kind = null;
+
                 for (WatchEvent<?> watchEvent : key.pollEvents()) {
+
                     //Fetch Even Type
                     kind = watchEvent.kind();
 
@@ -75,4 +145,14 @@ public class Watcher {
         }
 
     }
+
+    public String getActivePath() {
+        return activePath;
+    }
+
+    public void setActivePath(String activePath) {
+        this.activePath = activePath;
+    }
+    
+    
 }
